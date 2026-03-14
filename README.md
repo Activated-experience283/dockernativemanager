@@ -33,7 +33,7 @@ A modern, native, and blazing-fast desktop application to manage your Docker env
 - Rust (latest stable version)
 - Docker Desktop or Docker Engine running locally
 
-### Installation
+### Manual Installation
 
 1. Clone the repository:
    ```bash
@@ -57,6 +57,19 @@ To create a standalone application installer:
 
 ```bash
 pnpm tauri build
+```
+
+### Distributions using DPKG (Debian, Ubuntu, Mint, etc.)
+```bash
+sudo apt install ./docker-native-manager-x.y.z-x86_64.deb
+```
+### Distributions using RPM (Fedora, etc.)
+```bash
+sudo dnf install ./docker-native-manager-x.y.z-x86_64.rpm
+```
+### Distributions using ALPM (Arch Linux, CachyOS, SteamOS, etc.)
+```bash
+sudo pacman -U ./docker-native-manager-x.y.z-x86_64.pkg.tar.zst 
 ```
 
 The resulting binaries will be placed in the `src-tauri/target/release/bundle` directory.
