@@ -11,7 +11,7 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-22.04
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -33,7 +33,9 @@ jobs:
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev pkg-config fakeroot
+          sudo apt-get install -y \
+            libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf libssl-dev pkg-config fakeroot
 
       - name: Install frontend dependencies
         run: pnpm install
@@ -54,34 +56,18 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p dist-arch
-          cd dist-arch
-          
-          # Generate PKGBUILD
-          cat << 'EOF' > PKGBUILD
-          pkgname=dockernativemanager-bin
-          pkgver=${{ github.ref_name }}
-          pkgver=${pkgver#v}
-          pkgrel=1
-          pkgdesc="A powerful, native, and cross-platform GUI for managing Docker environments"
-          arch=('x86_64')
-          url="https://github.com/pedrofariasx/dockernativemanager"
-          license=('MIT')
-          depends=('webkit2gtk-4.1' 'gtk3' 'cairo' 'pango' 'glib2')
-          options=('!strip')
-          
-          package() {
-            install -d "\$pkgdir/usr/bin"
-            install -d "\$pkgdir/usr/share/pixmaps"
-            install -d "\$pkgdir/usr/share/applications"
-            
-            # Copy compiled binary from workspace
-            install -Dm755 /workspace/src-tauri/target/release/docker-native-manager "\$pkgdir/usr/bin/docker-native-manager"
-            
-            # Copy icon
-            install -Dm644 /workspace/src-tauri/icons/icon.png "\$pkgdir/usr/share/pixmaps/docker-native-manager.png"
-            
-            # Create desktop entry
-            cat << 'DESKTOP' > "\$pkgdir/usr/share/applications/docker-native-manager.desktop"
+
+          # FIX 3: strip o prefixo 'v' no bash, antes de escrever o PKGBUILD
+          PKG_VERSION="${{ github.ref_name }}"
+          PKG_VERSION="${PKG_VERSION#v}"
+
+          # Copia o binário e o ícone para dentro de dist-arch
+          # (serão referenciados pelo source=() do PKGBUILD)
+          cp src-tauri/target/release/docker-native-manager dist-arch/
+          cp src-tauri/icons/icon.png dist-arch/
+
+          # FIX 4: cria o .desktop como arquivo separado, fora do PKGBUILD
+          cat > dist-arch/docker-native-manager.desktop << 'DESKTOP'
           [Desktop Entry]
           Name=Docker Native Manager
           Exec=docker-native-manager
@@ -89,15 +75,52 @@ jobs:
           Type=Application
           Categories=Development;
           DESKTOP
+
+          # FIX 1 + 2 + 3: EOF sem aspas (expande $PKG_VERSION) e sem indentação
+          cat > dist-arch/PKGBUILD << EOF
+          pkgname=dockernativemanager-bin
+          pkgver=${PKG_VERSION}
+          pkgrel=1
+          pkgdesc="A powerful, native, and cross-platform GUI for managing Docker environments"
+          arch=('x86_64')
+          url="https://github.com/pedrofariasx/dockernativemanager"
+          license=('MIT')
+          # FIX 5: depends corretos vindos do debtap
+          depends=('cairo' 'gdk-pixbuf2' 'glib2' 'gtk3' 'hicolor-icon-theme' 'libsoup3' 'webkit2gtk-4.1')
+          options=('!strip')
+          # FIX 4: arquivos locais declarados em source=()
+          # makepkg os copia para \$srcdir automaticamente
+          source=('docker-native-manager'
+                  'icon.png'
+                  'docker-native-manager.desktop')
+          # SKIP evita calcular sha256 de binários locais em CI
+          sha256sums=('SKIP' 'SKIP' 'SKIP')
+
+          package() {
+            install -Dm755 "\${srcdir}/docker-native-manager" \\
+                           "\${pkgdir}/usr/bin/docker-native-manager"
+
+            install -Dm644 "\${srcdir}/icon.png" \\
+                           "\${pkgdir}/usr/share/pixmaps/docker-native-manager.png"
+
+            # FIX 4: instala o .desktop já criado como arquivo separado
+            install -Dm644 "\${srcdir}/docker-native-manager.desktop" \\
+                           "\${pkgdir}/usr/share/applications/docker-native-manager.desktop"
           }
           EOF
-          
-          cd ..
-          
-          # Run makepkg inside an Arch Linux container
-          docker run --rm -v $PWD:/workspace -w /workspace/dist-arch archlinux:base-devel bash -c "pacman -Sy --noconfirm && useradd -m builduser && echo 'builduser ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers && chown -R builduser:builduser /workspace && su - builduser -c 'cd /workspace/dist-arch && makepkg -s --noconfirm'"
-          
-          # Upload package to the current GitHub Release
-          cd dist-arch
-          ARCH_PKG=$(ls *.pkg.tar.zst)
-          gh release upload ${{ github.ref_name }} "$ARCH_PKG" --clobber
+
+          # Monta apenas dist-arch no container (não precisa do workspace inteiro)
+          docker run --rm \
+            -v "$PWD/dist-arch:/build" \
+            -w /build \
+            archlinux:base-devel bash -c "
+              pacman -Syu --noconfirm &&
+              useradd -m builduser &&
+              echo 'builduser ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers &&
+              chown -R builduser:builduser /build &&
+              su - builduser -c 'cd /build && makepkg -s --noconfirm'
+            "
+
+          # Faz upload do .pkg.tar.zst para a release do GitHub
+          ARCH_PKG=$(ls dist-arch/*.pkg.tar.zst)
+          gh release upload "${{ github.ref_name }}" "$ARCH_PKG" --clobber
