@@ -48,3 +48,56 @@ jobs:
           releaseBody: 'See the assets to download this version and install.'
           releaseDraft: false
           prerelease: false
+
+      - name: Package for Arch Linux and Upload
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p dist-arch
+          cd dist-arch
+          
+          # Generate PKGBUILD
+          cat << 'EOF' > PKGBUILD
+          pkgname=dockernativemanager-bin
+          pkgver=${{ github.ref_name }}
+          pkgver=${pkgver#v}
+          pkgrel=1
+          pkgdesc="A powerful, native, and cross-platform GUI for managing Docker environments"
+          arch=('x86_64')
+          url="https://github.com/pedrofariasx/dockernativemanager"
+          license=('MIT')
+          depends=('webkit2gtk-4.1' 'gtk3' 'cairo' 'pango' 'glib2')
+          options=('!strip')
+          
+          package() {
+            install -d "\$pkgdir/usr/bin"
+            install -d "\$pkgdir/usr/share/pixmaps"
+            install -d "\$pkgdir/usr/share/applications"
+            
+            # Copy compiled binary from workspace
+            install -Dm755 /workspace/src-tauri/target/release/docker-native-manager "\$pkgdir/usr/bin/docker-native-manager"
+            
+            # Copy icon
+            install -Dm644 /workspace/src-tauri/icons/icon.png "\$pkgdir/usr/share/pixmaps/docker-native-manager.png"
+            
+            # Create desktop entry
+            cat << 'DESKTOP' > "\$pkgdir/usr/share/applications/docker-native-manager.desktop"
+          [Desktop Entry]
+          Name=Docker Native Manager
+          Exec=docker-native-manager
+          Icon=docker-native-manager
+          Type=Application
+          Categories=Development;
+          DESKTOP
+          }
+          EOF
+          
+          cd ..
+          
+          # Run makepkg inside an Arch Linux container
+          docker run --rm -v $PWD:/workspace -w /workspace/dist-arch archlinux:base-devel bash -c "useradd -m builduser && chown -R builduser:builduser /workspace && su - builduser -c 'cd /workspace/dist-arch && makepkg -sf --noconfirm'"
+          
+          # Upload package to the current GitHub Release
+          cd dist-arch
+          ARCH_PKG=$(ls *.pkg.tar.zst)
+          gh release upload ${{ github.ref_name }} "$ARCH_PKG" --clobber
