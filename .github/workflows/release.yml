@@ -61,7 +61,6 @@ jobs:
           PKG_VERSION="${PKG_VERSION#v}"
           PKG_VERSION="${PKG_VERSION//-/.}"
 
-
           cp src-tauri/target/release/docker-native-manager dist-arch/
           cp src-tauri/icons/icon.png dist-arch/
 
@@ -74,46 +73,44 @@ jobs:
           Categories=Development;
           DESKTOP
 
-
           cat > dist-arch/PKGBUILD << EOF
           pkgname=dockernativemanager-bin
           pkgver=${PKG_VERSION}
           pkgrel=1
-          pkgdesc="A powerful, native, and cross-platform GUI for managing Docker environments"
+          pkgdesc="A powerful, native, cross-platform GUI for managing Docker environments"
           arch=('x86_64')
           url="https://github.com/pedrofariasx/dockernativemanager"
           license=('MIT')
           depends=('cairo' 'gdk-pixbuf2' 'glib2' 'gtk3' 'hicolor-icon-theme' 'libsoup3' 'webkit2gtk-4.1')
           options=('!strip')
           source=('docker-native-manager'
-          'icon.png'
-          'docker-native-manager.desktop')
+                  'icon.png'
+                  'docker-native-manager.desktop')
           sha256sums=('SKIP' 'SKIP' 'SKIP')
 
           package() {
-          install -Dm755 "\${srcdir}/docker-native-manager" \\
-                 "\${pkgdir}/usr/bin/docker-native-manager"
-          install -Dm644 "\${srcdir}/icon.png" \\
-                 "\${pkgdir}/usr/share/icons/hicolor/256x256/apps/docker-native-manager.png"
-          install -Dm644 "\${srcdir}/docker-native-manager.desktop" \\
-                 "\${pkgdir}/usr/share/applications/docker-native-manager.desktop"
+            install -Dm755 "\${srcdir}/docker-native-manager" \
+              "\${pkgdir}/usr/bin/docker-native-manager"
 
+            install -Dm644 "\${srcdir}/icon.png" \
+              "\${pkgdir}/usr/share/icons/hicolor/256x256/apps/docker-native-manager.png"
 
+            install -Dm644 "\${srcdir}/docker-native-manager.desktop" \
+              "\${pkgdir}/usr/share/applications/docker-native-manager.desktop"
           }
           EOF
-
 
           docker run --rm \
             -v "$PWD/dist-arch:/build" \
             -w /build \
             archlinux:base-devel bash -c "
-              pacman -Syu --noconfirm &&
+              pacman -Sy --noconfirm namcap &&
               useradd -m builduser &&
               echo 'builduser ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers &&
               chown -R builduser:builduser /build &&
-              su - builduser -c 'cd /build && makepkg -s --noconfirm'
+              su - builduser -c 'cd /build && makepkg -s --noconfirm' &&
+              namcap *.pkg.tar.zst || true
             "
-
 
           ARCH_PKG=$(ls dist-arch/*.pkg.tar.zst)
           gh release upload "${{ github.ref_name }}" "$ARCH_PKG" --clobber
