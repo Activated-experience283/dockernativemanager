@@ -45,6 +45,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          args: --bundles appimage,deb,rpm
           tagName: ${{ github.ref_name }}
           releaseName: "Docker Native Manager ${{ github.ref_name }}"
           releaseBody: "See the assets to download this version and install."
@@ -114,3 +115,21 @@ jobs:
 
           ARCH_PKG=$(ls dist-arch/*.pkg.tar.zst)
           gh release upload "${{ github.ref_name }}" "$ARCH_PKG" --clobber
+
+      - name: Package tar.gz and Upload
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p dist-targz
+
+          PKG_VERSION="${{ github.ref_name }}"
+          PKG_VERSION="${PKG_VERSION#v}"
+          PKG_VERSION="${PKG_VERSION//-/.}"
+
+          cp src-tauri/target/release/docker-native-manager dist-targz/
+          cp LICENSE dist-targz/
+
+          TAR_GZ="Docker.Native.Manager_${PKG_VERSION}_amd64.tar.gz"
+          tar -C dist-targz -czf "$TAR_GZ" docker-native-manager LICENSE
+
+          gh release upload "${{ github.ref_name }}" "$TAR_GZ" --clobber
