@@ -45,6 +45,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          # Arch Linux package is built in a dedicated step below (custom PKGBUILD + makepkg).
           args: --bundles appimage,deb,rpm
           tagName: ${{ github.ref_name }}
           releaseName: "Docker Native Manager ${{ github.ref_name }}"
@@ -59,6 +60,18 @@ jobs:
           mkdir -p dist-arch
 
           ARCH_DEPENDS=('cairo' 'gdk-pixbuf2' 'glib2' 'gtk3' 'hicolor-icon-theme' 'libsoup3' 'webkit2gtk-4.1')
+          declare -A ARCH_DEPENDS_SET
+          for dep in "${ARCH_DEPENDS[@]}"; do
+            ARCH_DEPENDS_SET["$dep"]=1
+          done
+
+          add_arch_dep() {
+            local dep="$1"
+            if [ -z "${ARCH_DEPENDS_SET[$dep]+x}" ]; then
+              ARCH_DEPENDS+=("$dep")
+              ARCH_DEPENDS_SET["$dep"]=1
+            fi
+          }
 
           map_deb_to_arch_dep() {
             case "$1" in
@@ -73,27 +86,36 @@ jobs:
             esac
           }
 
-          DEB_DEPENDS=$(node -e "const fs = require('fs'); const config = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8')); const deps = config.bundle?.linux?.deb?.depends ?? []; console.log(deps.join('\n'));")
+          DEB_DEPENDS=$(jq -r '.bundle.linux.deb.depends[]? // empty' src-tauri/tauri.conf.json)
 
           if [ -n "$DEB_DEPENDS" ]; then
             while IFS= read -r dep; do
               [ -z "$dep" ] && continue
-              DEP_NAME=$(echo "$dep" | sed -E 's/\s*\(.*\)//' | xargs)
-              MAPPED_DEP=$(map_deb_to_arch_dep "$DEP_NAME")
+              DEP_WITHOUT_VERSION=$(echo "$dep" | sed -E 's/\s*\([^)]*\)//g')
+              DEP_RESOLVED=false
 
-              if [ -z "$MAPPED_DEP" ]; then
-                echo "Debian dependency '$DEP_NAME' is not mapped for Arch Linux packaging."
+              IFS='|' read -ra DEP_CANDIDATES <<< "$DEP_WITHOUT_VERSION"
+              for DEP_CANDIDATE in "${DEP_CANDIDATES[@]}"; do
+                DEP_NAME=$(echo "$DEP_CANDIDATE" | xargs)
+                [ -z "$DEP_NAME" ] && continue
+
+                MAPPED_DEP=$(map_deb_to_arch_dep "$DEP_NAME")
+                if [ -n "$MAPPED_DEP" ]; then
+                  add_arch_dep "$MAPPED_DEP"
+                  DEP_RESOLVED=true
+                  break
+                fi
+              done
+
+              if [ "$DEP_RESOLVED" = false ]; then
+                echo "Debian dependency '$dep' is not mapped for Arch Linux packaging."
                 echo "Add a mapping in .github/workflows/release.yml (map_deb_to_arch_dep)."
                 exit 1
-              fi
-
-              if ! printf '%s\n' "${ARCH_DEPENDS[@]}" | grep -qx "$MAPPED_DEP"; then
-                ARCH_DEPENDS+=("$MAPPED_DEP")
               fi
             done <<< "$DEB_DEPENDS"
           fi
 
-          ARCH_DEPENDS_PKGBUILD=$(printf "'%s' " "${ARCH_DEPENDS[@]}")
+          ARCH_DEPENDS_PKGBUILD=$(printf "'%s'\n" "${ARCH_DEPENDS[@]}" | paste -sd' ' -)
 
           PKG_VERSION="${{ github.ref_name }}"
           PKG_VERSION="${PKG_VERSION#v}"
