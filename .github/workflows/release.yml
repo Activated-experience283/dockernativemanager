@@ -180,10 +180,13 @@ jobs:
           PKG_VERSION="${{ github.ref_name }}"
           PKG_VERSION="${PKG_VERSION#v}"
 
-          cp "$BIN_PATH" dist-targz/
-          cp LICENSE dist-targz/
+          FOLDER="docker-native-manager-${PKG_VERSION}"
+          mkdir -p "dist-targz/$FOLDER"
+
+          cp "$BIN_PATH" "dist-targz/$FOLDER/"
+          cp LICENSE "dist-targz/$FOLDER/"
 
           TAR_GZ="Docker.Native.Manager_${PKG_VERSION}_amd64.tar.gz"
-          tar -C dist-targz -czf "$TAR_GZ" docker-native-manager LICENSE
+          tar -C dist-targz -czf "$TAR_GZ" "$FOLDER"
 
           gh release upload "${{ github.ref_name }}" "$TAR_GZ" --clobber
