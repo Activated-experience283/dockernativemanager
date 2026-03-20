@@ -70,12 +70,36 @@ jobs:
           releaseDraft: false
           prerelease: false
 
+      - name: Package tar.gz and Upload
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p dist-targz
+          BIN_PATH="src-tauri/target/release/docker-native-manager"
+          
+          if [ ! -f "$BIN_PATH" ]; then
+            echo "Expected binary not found at $BIN_PATH"
+            exit 1
+          fi
+
+          PKG_VERSION="${{ github.ref_name }}"
+          PKG_VERSION="${PKG_VERSION#v}"
+          FOLDER="docker-native-manager-${PKG_VERSION}"
+          
+          mkdir -p "dist-targz/$FOLDER"
+          cp "$BIN_PATH" "dist-targz/$FOLDER/"
+          cp LICENSE "dist-targz/$FOLDER/"
+
+          TAR_GZ="Docker.Native.Manager_${PKG_VERSION}_amd64.tar.gz"
+          tar -C dist-targz -czf "$TAR_GZ" "$FOLDER"
+
+          gh release upload "${{ github.ref_name }}" "$TAR_GZ" --clobber
+
       - name: Build & Package for Arch Linux
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p dist-arch
-
           PKG_VERSION="${{ github.ref_name }}"
           PKG_VERSION="${PKG_VERSION#v}"
           PKG_VERSION="${PKG_VERSION//-/.}"
@@ -84,16 +108,9 @@ jobs:
             -v "$PWD:/repo" \
             -w /repo \
             archlinux:base-devel bash -c "
-
               set -e
-
               pacman -Syu --noconfirm
-
-              pacman -Sy --noconfirm \
-                git base-devel rust nodejs pnpm \
-                cairo gdk-pixbuf2 glib2 gtk3 \
-                hicolor-icon-theme libsoup3 webkit2gtk-4.1 \
-                gcc-libs
+              pacman -Sy --noconfirm git base-devel rust nodejs pnpm cairo gdk-pixbuf2 glib2 gtk3 hicolor-icon-theme libsoup3 webkit2gtk-4.1 gcc-libs
 
               useradd -m builduser
               echo 'builduser ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builduser
@@ -103,14 +120,12 @@ jobs:
               su - builduser -c '
                 set -e
                 cd /repo
-
                 export CI=true
-
+                rm -rf node_modules
                 pnpm install --no-frozen-lockfile
-                pnpm tauri build
+                pnpm tauri build --bundles none
 
                 mkdir -p dist-arch
-
                 cp src-tauri/target/release/docker-native-manager dist-arch/
                 cp src-tauri/icons/icon.png dist-arch/
                 cp LICENSE dist-arch/
@@ -165,33 +180,8 @@ jobs:
                 cd dist-arch
                 makepkg -s --noconfirm
               '
+              chown -R 1001:1001 /repo
             "
 
           ARCH_PKG=$(ls dist-arch/*.pkg.tar.zst)
           gh release upload "${{ github.ref_name }}" "$ARCH_PKG" --clobber
-
-      - name: Package tar.gz and Upload
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          mkdir -p dist-targz
-
-          BIN_PATH="src-tauri/target/release/docker-native-manager"
-          if [ ! -f "$BIN_PATH" ]; then
-            echo "Expected binary not found at $BIN_PATH"
-            exit 1
-          fi
-
-          PKG_VERSION="${{ github.ref_name }}"
-          PKG_VERSION="${PKG_VERSION#v}"
-
-          FOLDER="docker-native-manager-${PKG_VERSION}"
-          mkdir -p "dist-targz/$FOLDER"
-
-          cp "$BIN_PATH" "dist-targz/$FOLDER/"
-          cp LICENSE "dist-targz/$FOLDER/"
-
-          TAR_GZ="Docker.Native.Manager_${PKG_VERSION}_amd64.tar.gz"
-          tar -C dist-targz -czf "$TAR_GZ" "$FOLDER"
-
-          gh release upload "${{ github.ref_name }}" "$TAR_GZ" --clobber
